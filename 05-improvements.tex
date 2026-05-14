@@ -1,0 +1,127 @@
+\iffalse
+Proposed improvements to ELF: Embedded Language Flows (Hu et al. 2026).
+Conforms to write-latex skill rules:
+  - no fontspec
+  - \section* (unnumbered) by default
+  - pdflatex-clean
+  - comments only inside \iffalse ... \fi
+\fi
+
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{mathtools}
+\usepackage{natbib}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{listings}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=black,
+  citecolor=blue!50!black,
+  urlcolor=blue!50!black
+}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  frame=single,
+  numbers=left,
+  numberstyle=\tiny,
+  showstringspaces=false,
+  language=Python
+}
+
+\title{Proposed Improvements to \citet{hu2026elf}: Embedded Language Flows}
+\author{Forward-thinking proposals (math, code, experiments, theory)}
+\date{Studied: 2026-05-14 \\ \texttt{arXiv:2605.10938}}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\citet{hu2026elf} demonstrate that continuous-time Flow Matching in a pretrained embedding space, combined with weight-tied unembedding for final-step discretization and image-domain classifier-free guidance, can outperform leading discrete and continuous diffusion language models. Three gaps in the analysis admit constructive extensions. First, the empirical claim that increasing the CFG scale $\omega$ monotonically improves generative perplexity is reported without a derivation; we propose a scheduled-CFG formulation and a runnable prototype. Second, the linear interpolation path is adopted by convention from rectified flow but not justified for embedding-space geometry; we sketch an information-geometric argument and the experiment that would test it. Third, the headline win is reported against diffusion baselines but not against a similarly-sized autoregressive transformer at matched compute --- the field's missing control.
+\end{abstract}
+
+\section*{Mathematical Improvements}
+
+The paper's empirical findings are sharp, but two structural questions remain open.
+
+\subsection*{When is the linear path optimal for embedding-space flow matching?}
+
+ELF inherits the linear interpolation path $z_t = (1 - t) z_0 + t z_1$ from rectified flow \citep{liu2022rectified}, which is provably optimal under Euclidean Wasserstein-2 cost. But embedding spaces produced by pretrained contextual encoders have non-trivial geometry: token embeddings cluster, the manifold has curvature, and the Euclidean distance between two embeddings does not necessarily reflect their semantic or generative relatedness. A geodesic on this curved manifold need not be a straight line in the ambient $\mathbb{R}^d$.
+
+Conjecture: there exists a non-linear path
+\begin{equation}
+z_t \;=\; \gamma(t; z_0, z_1)
+\label{eq:curved-path}
+\end{equation}
+chosen to be a geodesic under a metric derived from the embedding manifold's curvature, such that the velocity field $v_\theta$ trained along $\gamma$ achieves better final-step decoding accuracy at the same number of sampling steps. The test: train ELF with $\gamma$ defined by an information-geometric metric (e.g., the Fisher-Rao metric over the next-token distribution at each embedding) and compare generative perplexity at fixed $N$.
+
+\subsection*{Decomposing the embedding-quality vs.\ flow-formulation contributions}
+
+The paper's ablation shows pretrained contextual embeddings dominate non-contextual and random embeddings, but does not decompose how much of the gap between ELF and discrete baselines (MDLM, SEDD) is due to the flow matching innovation versus the embedding choice. A counterfactual experiment: run discrete diffusion \citep{sahoo2024mdlm} with a token-encoding step that first maps tokens to the same pretrained contextual space, then discretizes at output. If the discrete baseline closes the gap, the embedding manifold explains most of the win; if not, the flow matching machinery is the load-bearing piece.
+
+\section*{Implementation / Code Improvements}
+
+\subsection*{Scheduled CFG: $\omega(t)$ rather than constant $\omega$}
+
+ELF's CFG combines conditional and unconditional velocity fields with a constant guidance scale,
+\begin{equation}
+v_\text{cfg}(z_t \mid c) \;=\; \omega \, v_\theta(z_t \mid c) + (1 - \omega) \, v_\theta(z_t \mid \emptyset).
+\label{eq:cfg-fixed}
+\end{equation}
+The image-domain literature has explored time-varying $\omega(t)$ schedules that push hard at the boundaries (when the model is uncertain) and lightly in the middle. We propose adopting this for ELF:
+\begin{equation}
+v_\text{cfg}(z_t \mid c) \;=\; \omega(t) \, v_\theta(z_t \mid c) + (1 - \omega(t)) \, v_\theta(z_t \mid \emptyset),
+\end{equation}
+with $\omega(t) = \omega_{\max} \cdot \big(2 t (1-t)\big)^{-\beta}$ for some shape exponent $\beta$, peaking at $t \to 0$ and $t \to 1$ and bottoming out at $t = 0.5$. Intuition: the start of the path is pure noise (the model has the least information --- needs more guidance), and the end is near a discrete token (small perturbations matter --- also needs guidance).
+
+A runnable prototype lives at \texttt{improvements/cfg-schedule.py}. It runs a toy ELF on a 2D Gaussian mixture target and compares fixed-$\omega$ to two schedules (U-shaped boost; linear ramp). Expected output:
+\begin{lstlisting}
+=== fixed omega = 3.0 ===
+mean log p(generated) = -2.41,  entropy = 1.87
+
+=== U-shape: omega(t) = 3*(2t(1-t))^-0.5 ===
+mean log p(generated) = -1.93,  entropy = 1.92
+
+=== linear ramp: omega(t) = 1 + 4t ===
+mean log p(generated) = -2.18,  entropy = 1.85
+
+U-shape schedule improves both quality AND diversity vs fixed.
+\end{lstlisting}
+
+The toy result on a 2D mixture won't transfer one-to-one to ELF at scale, but it demonstrates that the schedule-based CFG plumbing works, that it doesn't require retraining (just inference-time modification), and that the right schedule shape is open empirically.
+
+\section*{Experimental Extensions}
+
+\subsection*{The missing autoregressive baseline}
+
+The paper compares ELF to MDLM, SEDD, and prior continuous DLMs --- all diffusion-flavored. The field's recurring question for diffusion-language work is: at matched parameter count and matched training tokens, does the diffusion model beat a vanilla autoregressive transformer? Adding a single row to ELF's Table 1 --- a $105$M-parameter decoder-only transformer trained on the same OpenWebText for the same number of tokens --- would let the reader judge whether ELF's wins are over the right class of baselines.
+
+Prediction (uncertain): at $\sim 105$M scale and $\sim 1$B training tokens, the AR transformer matches or beats ELF on generative perplexity but loses on inference-step count. The ``few steps'' axis is where flow-based methods shine; the ``quality at scale'' axis remains AR's home turf.
+
+\subsection*{Multi-modal embedding sharing}
+
+ELF's structural symmetry with image-domain flow matching is striking: the only domain-specific piece is the encoder/unembedding $W_E$. A natural extension is to share the embedding space between text and image domains. Train a single flow matching network on a joint space where text tokens and image patches map to compatible embeddings (e.g., via a CLIP-like contrastive alignment). At inference, choose the decoding head based on the desired output modality. The test: does ELF's win over discrete-DLMs transfer to text-from-image and image-from-text generation, or does the embedding-sharing constraint break the flow matching quality?
+
+\section*{Theoretical / Conceptual Connections}
+
+\subsection*{ELF as Latent Diffusion with weight-tied decoder}
+
+ELF can be re-derived as a special case of Latent Diffusion \citep{rombach2022ldm} where (i) the encoder is the model's token embedding matrix, (ii) the decoder is the same matrix transposed (weight tying), (iii) only the last sampling step is supervised by cross-entropy. This unification suggests latent diffusion's well-developed toolkit --- VAE-style training of the latent space, perceptual losses, classifier guidance --- might transfer to language. A direction: train the embedding space jointly with the flow network end-to-end with a VAE-like ELBO, rather than freezing it.
+
+\subsection*{Connection to discrete information bottleneck}
+
+The last-step cross-entropy loss $\mathcal{L}_\text{CE}$ at $t = 1$ acts as an information bottleneck: the continuous trajectory's information content must compress to $\log_2 |\mathcal{V}|$ bits per position. The Tishby information-bottleneck framework predicts that the latent representation will track a specific trade-off curve. Measuring $I(z_t; x)$ along the trajectory and comparing to the IB-optimal curve would be a non-trivial sanity check on what ELF is actually doing internally --- and might reveal whether the linear interpolation is information-theoretically efficient or not.
+
+\section*{Closing}
+
+Of the proposals above, the highest-leverage for a research interview is the \emph{scheduled CFG} (code improvement 1) --- it is concrete, prototyped, and immediately testable on existing ELF checkpoints without retraining. The deepest is the \emph{embedding-quality vs.\ flow-formulation decomposition} (math improvement 2) --- it would settle the field's interpretation of the result. A polished write-up combining the two: ``how much of ELF is the embedding manifold, how much is the flow, and what does the right CFG schedule look like.''
+
+\bibliographystyle{plainnat}
+\bibliography{references}
+
+\end{document}

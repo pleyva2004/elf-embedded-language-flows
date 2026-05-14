@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.cache/
+*.pt
+*.bin
+
+# OS
+.DS_Store
+
+# LaTeX byproducts (keep source.pdf — that's the paper)
+*.aux
+*.log
+*.bbl
+*.blg
+*.out
+*.toc
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+/04-literature-review.pdf
+/05-improvements.pdf
+/interview-handout.pdf

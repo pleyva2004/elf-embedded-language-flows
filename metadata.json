@@ -1,0 +1,12 @@
+{
+  "slug": "elf-embedded-language-flows",
+  "title": "ELF: Embedded Language Flows",
+  "authors": ["Keya Hu", "Linlu Qiu", "Yiyang Lu", "Hanhong Zhao", "Tianhong Li", "Yoon Kim", "Jacob Andreas", "Kaiming He"],
+  "arxiv_id": "2605.10938",
+  "source_url": "https://arxiv.org/abs/2605.10938",
+  "pdf_path": "~/ai-research-studies/elf-embedded-language-flows/source.pdf",
+  "started": "2026-05-14",
+  "stages_completed": ["00-ingest"],
+  "github_url": "https://github.com/pleyva2004/elf-embedded-language-flows",
+  "official_repo": "https://github.com/lillian039/ELF"
+}

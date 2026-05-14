@@ -1,0 +1,106 @@
+\iffalse
+Literature review entry for ELF: Embedded Language Flows (Hu et al. 2026, arxiv:2605.10938).
+Written per the write-latex skill rules:
+  - no fontspec
+  - \section* (unnumbered) by default
+  - pdflatex-clean
+  - comments only inside \iffalse ... \fi
+\fi
+
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{mathtools}
+\usepackage{natbib}
+\usepackage{hyperref}
+\usepackage{xcolor}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=black,
+  citecolor=blue!50!black,
+  urlcolor=blue!50!black
+}
+
+\title{Embedded Language Flows: A Minimalist Bridge Between Image-Domain Flow Matching and Diffusion Language Modeling --- A Review of \citet{hu2026elf}}
+\author{Literature review entry}
+\date{Studied: 2026-05-14 \\ \texttt{arXiv:2605.10938}}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\citet{hu2026elf} propose Embedded Language Flows (ELF), a class of continuous diffusion language models (DLMs) based on continuous-time Flow Matching \citep{lipman2022fm, liu2022rectified} operating in a frozen pretrained embedding space. Unlike prior continuous DLMs that supervise discretization at every timestep, ELF keeps the entire sampling trajectory in continuous embedding space and only discretizes at $t = 1$ via the weight-tied unembedding matrix, eliminating the need for a separately trained decoder. The formulation is structurally identical to image-domain latent diffusion \citep{rombach2022ldm}, which lets the authors directly transfer classifier-free guidance \citep{ho2022cfg} and other established image-domain techniques. With $\sim 105$M parameters, $\sim 10\times$ fewer training tokens than baselines, and fewer sampling steps, ELF outperforms leading discrete DLMs such as MDLM \citep{sahoo2024mdlm} and SEDD \citep{lou2024sedd}, as well as continuous DLMs descended from Diffusion-LM \citep{li2022diffusionlm}. The result challenges the dominant framing that language requires fundamentally discrete diffusion machinery and offers a cleaner template for cross-modal generative modeling.
+\end{abstract}
+
+\section*{Background and Motivation}
+
+Diffusion and flow-based generative models \citep{ho2020ddpm, lipman2022fm, liu2022rectified, albergo2025interpolants} have become the dominant paradigm for continuous data (images, video, audio). Their extension to language has split into two camps. Discrete DLMs \citep{austin2021d3pm, sahoo2024mdlm, lou2024sedd} apply diffusion directly over the categorical token vocabulary, using absorbing-state or score-ratio formulations. Continuous DLMs \citep{li2022diffusionlm} lift discrete tokens into a continuous embedding space, run diffusion there, and discretize back. Continuous DLMs have historically underperformed discrete DLMs because they require (i) per-step cross-entropy supervision to keep the trajectory near valid tokens and (ii) a separately trained decoder that maps embedding-space samples back to text. Both constraints degrade flow flexibility and add architectural overhead.
+
+The paper under review removes both constraints.
+
+\section*{Technical Approach}
+\label{sec:method}
+
+Let $E: \mathcal{V} \to \mathbb{R}^d$ denote a token embedding map, $z_1 = E(x)$ the clean embedding tensor for sequence $x \in \mathcal{V}^L$, and $z_0 \sim \mathcal{N}(0, I)$. ELF uses a linear interpolation path
+\begin{equation}
+z_t \;=\; (1 - t) z_0 + t \, z_1, \qquad t \in [0, 1].
+\label{eq:path}
+\end{equation}
+
+\paragraph{Flow matching objective.}
+A neural network $v_\theta(z_t, t)$ is trained to predict the target velocity $z_1 - z_0$ via
+\begin{equation}
+\mathcal{L}_{\text{FM}}(\theta) \;=\; \mathbb{E}_{x, z_0, t}\Big[\, \big\| v_\theta(z_t, t) - (z_1 - z_0) \big\|^2 \,\Big].
+\label{eq:fm}
+\end{equation}
+Equivalently the network may predict the clean embedding $\hat{x}_\theta(z_t, t) = \mathbb{E}[z_1 \mid z_t]$ (the $x$-prediction parameterisation used by the authors).
+
+\paragraph{Final-step discretization via weight-tied unembedding.}
+At inference, $z_0$ is integrated forward to $t = 1$. ELF's key observation is that the same encoder that produced $z_1 = E(x) = W_E x$ can be re-used at the final step as the decoder: discrete tokens are recovered via
+\begin{equation}
+\pi_\theta(z_t \to 1) \;=\; \mathrm{softmax}\big( W_E \cdot \hat{x}_\theta(z_{t \to 1}, 1) \big),
+\label{eq:decode}
+\end{equation}
+where $W_E \in \mathbb{R}^{|\mathcal{V}| \times d}$ is shared between the encoder and the unembedding head. No separate decoder is trained. Cross-entropy supervision is applied \emph{only} at $t = 1$, with weight $\alpha$, alongside the flow matching loss:
+\begin{equation}
+\mathcal{L}(\theta) \;=\; \mathcal{L}_{\text{FM}}(\theta) + \alpha \, \mathcal{L}_{\text{CE}}(\theta).
+\end{equation}
+
+\paragraph{Classifier-free guidance with self-conditioning.}
+ELF inherits CFG \citep{ho2022cfg} directly. The conditioning signal $c$ is the model's own intermediate prediction (self-conditioning); CFG combines conditional and unconditional velocity fields as
+\begin{equation}
+v_{\text{cfg}}(z_t \mid c) \;=\; \omega \, v_\theta(z_t \mid c) + (1 - \omega) \, v_\theta(z_t \mid \emptyset).
+\label{eq:cfg}
+\end{equation}
+To avoid the $2\times$ inference cost of naive CFG, the authors adopt \emph{training-time CFG} (cf.\ image-domain analogues): train the network to output $v_\text{cfg}$ directly in one forward pass.
+
+\paragraph{Embedding choice.}
+The encoder $E$ is studied in three regimes: pretrained contextual (transformer input embeddings), non-contextual learned (lookup table), and frozen random projection. Pretrained contextual embeddings dominate the ablation, suggesting the well-structured embedding manifold provides much of the lift.
+
+\section*{Key Results}
+
+ELF is evaluated on three setups. (i) Unconditional generation on OpenWebText, with generative perplexity under a pretrained GPT-2 Large evaluator and unigram entropy as a diversity proxy. (ii) Conditional generation on WMT14 De$\to$En translation. (iii) Conditional generation on summarization.
+
+The headline empirical findings: with a $\sim 105$M parameter model trained on $\sim 10\times$ fewer tokens than its $\sim 170$M-parameter competitors, ELF achieves lower generative perplexity at fewer sampling steps than MDLM \citep{sahoo2024mdlm}, SEDD \citep{lou2024sedd}, and prior continuous DLMs. CFG sweeps trace a quality--diversity Pareto front (higher $\omega$ lowers perplexity, lowers entropy). Ablations confirm: pretrained contextual embeddings dominate; per-step CE supervision (the prior-art approach) underperforms ELF's at-final-step-only formulation; training-time CFG matches inference-time CFG quality at half the cost.
+
+\section*{Position in the Literature}
+
+ELF is a structural simplification of prior continuous DLMs. Where \citet{li2022diffusionlm} apply per-step categorical supervision to keep the trajectory close to valid tokens, ELF lets the trajectory run free and discretizes only at the final step. Where latent diffusion \citep{rombach2022ldm} trains a separate decoder, ELF reuses the encoder via weight tying. Where discrete DLMs \citep{austin2021d3pm, sahoo2024mdlm, lou2024sedd} avoid the embedding-space question entirely by formulating diffusion over categoricals, ELF returns to the embedding-space formulation and shows it can be made competitive with minimal machinery.
+
+The broader thesis: language can be modeled with the same flow-matching toolkit developed for images, provided the discrete--continuous interface is handled at exactly one boundary (the final time step) rather than diffusely across the trajectory. This is a unification claim in the sense that the empirical machinery is shared with image-domain flow matching \citep{lipman2022fm, liu2022rectified}.
+
+\section*{Limitations and Open Questions}
+
+The empirical wins come with caveats. The pretrained contextual embedding is doing significant work; the authors do not quantitatively decompose how much of the gap over discrete baselines is due to the flow matching formulation versus the embedding manifold. Generative perplexity under GPT-2 Large is the headline quality metric, which biases the evaluation toward models whose output distribution resembles GPT-2's; unigram entropy is a weak diversity proxy that does not catch $n$-gram-level repetition or mode collapse. No comparison is reported against a similarly-sized autoregressive transformer trained on the same OpenWebText setup with matched token budget --- the salient missing control.
+
+The mathematical setup leaves the choice of linear interpolation path unexamined: rectified-flow-style straight-line paths are convenient but not obviously optimal for embedding spaces with non-trivial geometry. The CFG scale $\omega$ is swept empirically; no analysis is offered for when the quality--diversity Pareto front saturates or inverts.
+
+\section*{Sandbox Probe}
+A minimal CPU-runnable PyTorch experiment was built to probe the weight-tied-unembedding mechanism in isolation. A tiny MLP is trained to predict $\hat{x}_\theta$ along the linear flow path on a synthetic vocabulary of $64$ tokens with $32$-dimensional random embeddings; Euler integration with varying step counts is followed by $\arg\max W_E z$ decoding. Source: \url{https://github.com/pleyva2004/elf-embedded-language-flows} (sandbox subdirectory).
+
+\bibliographystyle{plainnat}
+\bibliography{references}
+
+\end{document}

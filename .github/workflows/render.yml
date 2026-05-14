@@ -1,0 +1,66 @@
+name: Render LaTeX
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '**.tex'
+      - '**.bib'
+      - '.github/workflows/render.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compile literature review
+        if: hashFiles('04-literature-review.tex') != ''
+        uses: xu-cheng/latex-action@v3
+        with:
+          root_file: 04-literature-review.tex
+          latexmk_use_xelatex: false
+          args: -pdf -interaction=nonstopmode -halt-on-error -file-line-error
+
+      - name: Compile improvements
+        if: hashFiles('05-improvements.tex') != ''
+        uses: xu-cheng/latex-action@v3
+        with:
+          root_file: 05-improvements.tex
+          latexmk_use_xelatex: false
+          args: -pdf -interaction=nonstopmode -halt-on-error -file-line-error
+
+      - name: Compile interview handout
+        if: hashFiles('interview-handout.tex') != ''
+        uses: xu-cheng/latex-action@v3
+        with:
+          root_file: interview-handout.tex
+          latexmk_use_xelatex: false
+          args: -pdf -interaction=nonstopmode -halt-on-error -file-line-error
+
+      - name: Stage generated PDFs in pdfs/
+        run: |
+          mkdir -p pdfs
+          for f in 04-literature-review.pdf 05-improvements.pdf interview-handout.pdf; do
+            if [ -f "$f" ]; then
+              mv "$f" "pdfs/$f"
+              echo "Moved $f → pdfs/"
+            fi
+          done
+          ls -la pdfs/
+
+      - name: Commit and push PDFs
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add pdfs/
+          if git diff --cached --quiet; then
+            echo "No PDF changes to commit"
+          else
+            git commit -m "render: update compiled PDFs [skip ci]"
+            git push
+          fi

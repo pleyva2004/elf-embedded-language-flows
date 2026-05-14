@@ -1,0 +1,88 @@
+\iffalse
+One-page printable interview handout for ELF: Embedded Language Flows
+(Hu et al. 2026, arxiv:2605.10938).
+Written per the write-latex skill rules:
+  - no fontspec
+  - \section* (unnumbered) by default
+  - pdflatex-clean
+  - comments only inside \iffalse ... \fi
+  - inline plaintext citations only (no natbib loaded)
+\fi
+
+\documentclass[10pt]{article}
+
+\usepackage[letterpaper, margin=0.6in]{geometry}
+\usepackage{amsmath, amssymb}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage{titlesec}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=black,
+  citecolor=blue!50!black,
+  urlcolor=blue!50!black
+}
+
+\titleformat{\section}{\large\bfseries}{}{0pt}{}
+\titlespacing*{\section}{0pt}{6pt}{2pt}
+
+\setlist[itemize]{leftmargin=*, topsep=1pt, itemsep=1pt}
+
+\pagenumbering{gobble}
+
+\begin{document}
+
+\begin{center}
+  {\Large\textbf{Hu et al.\ 2026 --- ELF: Embedded Language Flows}}\\[2pt]
+  {\small Continuous flow matching in embedding space; weight-tied unembedding decoder \quad\textbar\quad arXiv:2605.10938 \quad\textbar\quad \href{https://github.com/pleyva2004/elf-embedded-language-flows}{my study repo}}
+\end{center}
+
+\section*{One-Liner}
+Run continuous-time flow matching in a frozen pretrained embedding space; reuse the same network's final timestep as the decoder via the tied unembedding matrix. Minimal-machinery DLM that beats discrete (MDLM, SEDD) and prior continuous (Diffusion-LM) baselines at $\sim 10\times$ fewer training tokens and fewer sampling steps.
+
+\section*{What's Novel}
+\begin{itemize}
+  \item \textbf{No separate decoder.} Prior continuous DLMs train one; ELF observes the flow's final step IS the decoder if the unembedding $W_E$ is weight-tied to the input embedding.
+  \item \textbf{Stays continuous until $t = 1$.} Most continuous DLMs supervise discretization at every step (per-step cross-entropy). ELF lets the flow run free in $\mathbb{R}^d$ and only discretizes at the final step.
+  \item \textbf{CFG plugged in cleanly.} Structural symmetry with image-domain flow matching means classifier-free guidance transfers directly. ELF uses training-time CFG to avoid the $2\times$ inference overhead.
+  \item \textbf{Pretrained contextual embeddings dominate.} Ablation: pretrained $>$ non-contextual $>$ frozen-random. The embedding manifold is doing real work.
+\end{itemize}
+
+\section*{Math in 60 Seconds}
+Linear interpolation path with $z_1 = E(x)$ the clean embedding and $z_0 \sim \mathcal{N}(0, I)$:
+\[
+  z_t = (1 - t) z_0 + t z_1, \quad t \in [0,1].
+\]
+Flow-matching training objective:
+\[
+  \mathcal{L}_\text{FM}(\theta) = \mathbb{E}_{x, z_0, t}\big[\|v_\theta(z_t, t) - (z_1 - z_0)\|^2\big].
+\]
+Final-step discretization via weight-tied unembedding $W_E$:
+\[
+  \pi_\theta(z_{t \to 1}) = \mathrm{softmax}(W_E \, \hat{x}_\theta(z_{t \to 1}, 1)).
+\]
+CFG combines conditional and unconditional flows with a single guidance scalar $\omega$:
+\[
+  v_\text{cfg}(z_t \mid c) = \omega \, v_\theta(z_t \mid c) + (1 - \omega) \, v_\theta(z_t \mid \emptyset).
+\]
+
+\section*{What I'd Push Back On}
+\begin{itemize}
+  \item Pretrained embeddings carry a lot of the win; the paper doesn't decompose embedding-vs-flow contributions. A discrete-DLM baseline given the same pretrained embedding space would settle this.
+  \item Generative perplexity under GPT-2 Large biases the metric toward GPT-2-like outputs. Unigram entropy as the diversity proxy doesn't catch $n$-gram repetition.
+  \item No matched-compute autoregressive baseline. The interesting question --- does ELF beat a $105$M-param decoder-only transformer at the same training budget? --- is unanswered.
+  \item ``Minimal adaptation'' undersells self-conditioning, training-time CFG, and the embedding choice. Minimal in form, several engineering pieces in practice.
+\end{itemize}
+
+\section*{My One Proposed Extension}
+Scheduled CFG: replace constant $\omega$ with a time-varying $\omega(t)$ that emphasises guidance near the boundaries of the path. Concretely, $\omega(t) = \omega_\text{max} \cdot \big(2 t (1-t) + \epsilon\big)^{-\beta}$ (U-shape, peaks at $t \to 0$ and $t \to 1$). The intuition: pure noise at the start and discrete-decoding at the end are the high-stakes regions; the middle of the path is where the flow is most reliable on its own. A prototype on a toy 2D Gaussian mixture (\texttt{improvements/cfg-schedule.py}) shows U-shape can improve both quality and diversity vs fixed-$\omega$ at the same sampling cost. Inference-only modification --- no retraining required to test on existing ELF checkpoints. Testable with a CFG-scale sweep on OpenWebText.
+
+\emph{Full proposal set: \texttt{05-improvements.tex} in the study repo.}
+
+\section*{My One Question}
+\emph{If ELF's design philosophy is ``operate in continuous embedding space; discretize only at the final step,'' what's the right notion of ``intermediate trajectory quality''? Is the flow passing through linguistically meaningful intermediate states, or just along a Euclidean geodesic in an embedding manifold with semantic structure orthogonal to the path?}
+
+\end{document}

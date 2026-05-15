@@ -64,3 +64,69 @@ jobs:
             git commit -m "render: update compiled PDFs [skip ci]"
             git push
           fi
+
+  render-tour:
+    runs-on: ubuntu-latest
+    needs: render
+    if: hashFiles('learning-map/tour.tex') != ''
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Pull latest (render may have just committed)
+        run: git pull --rebase
+      - name: Compile tour
+        uses: xu-cheng/latex-action@v3
+        with:
+          root_file: tour.tex
+          working_directory: learning-map
+          latexmk_use_xelatex: false
+          args: -pdf -interaction=nonstopmode -halt-on-error
+      - name: Commit tour.pdf
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add learning-map/tour.pdf
+          if git diff --cached --quiet; then
+            echo "No tour.pdf change to commit"
+          else
+            git commit -m "render: update tour.pdf [skip ci]"
+            git push
+          fi
+
+  render-proofs:
+    runs-on: ubuntu-latest
+    needs: render-tour     # serialise after render-tour to avoid push races
+    if: hashFiles('proofs/*.tex') != ''
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Pull latest (render-tour may have just committed)
+        run: git pull --rebase
+      - name: Install TeX Live
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends \
+            texlive-latex-base texlive-latex-recommended texlive-fonts-recommended \
+            texlive-latex-extra texlive-science latexmk
+      - name: Compile every proof
+        run: |
+          set -e
+          for f in proofs/*.tex; do
+            [ -f "$f" ] || continue
+            echo "Compiling $f"
+            (cd proofs && latexmk -pdf -interaction=nonstopmode -halt-on-error "$(basename "$f")")
+          done
+          ls -la proofs/
+      - name: Commit proof PDFs
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add proofs/*.pdf
+          if git diff --cached --quiet; then
+            echo "No proof PDF changes to commit"
+          else
+            git commit -m "render: update proof PDFs [skip ci]"
+            git push
+          fi

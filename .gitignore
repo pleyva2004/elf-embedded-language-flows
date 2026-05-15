@@ -23,3 +23,13 @@ venv/
 /04-literature-review.pdf
 /05-improvements.pdf
 /interview-handout.pdf
+
+# v1.9: tour and proof byproducts (CI rebuilds these)
+learning-map/tour.aux
+learning-map/tour.log
+learning-map/tour.out
+learning-map/tour.pdf
+proofs/*.aux
+proofs/*.log
+proofs/*.out
+proofs/*.pdf

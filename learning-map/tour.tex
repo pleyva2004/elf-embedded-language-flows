@@ -1,0 +1,127 @@
+\iffalse
+Learning-map tour for ELF: Embedded Language Flows (Hu et al. 2026, arXiv:2605.10938).
+v1.9 per-paper-tour rollout artefact.
+Conforms to write-latex skill rules:
+  - no fontspec
+  - \section* (unnumbered) by default
+  - pdflatex-clean
+  - comments only inside \iffalse ... \fi
+\fi
+
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{mathtools}
+\usepackage{longtable}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\usepackage{hyperref}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=black,
+  citecolor=blue!50!black,
+  urlcolor=blue!50!black
+}
+
+\title{Learning-Map Tour --- ELF: Embedded Language Flows}
+\author{Tour artefact (v1.9 per-paper-tour rollout) \\ Hu et al.\ 2026, \texttt{arXiv:2605.10938}}
+\date{Last updated: 2026-05-15}
+
+\begin{document}
+\maketitle
+
+\section*{1. Reader's Contract}
+
+\textbf{Audience.} Math-grad to ML researcher. The reader is comfortable with measure-theoretic probability, ODEs/SDEs at the level of a first graduate course, and basic Riemannian geometry; familiarity with Transformers and language modeling is assumed but not deep expertise in diffusion-language work.
+
+\textbf{Background.} Before reading the paper itself, walk the \href{https://github.com/pleyva2004/math-foundations}{math-foundations} tour at the \emph{Graduate} entry point. The reader who has not internalised continuity equations and Liouville flow on densities should warm up there first. Foundation links are given concept-by-concept in Section~2.
+
+\textbf{Expected reading time.} 3 to 4 hours, broken as:
+\begin{itemize}
+  \item 30 min --- foundations refresher (Section~2 of this tour)
+  \item 90 min --- first read of \texttt{02-math-deep-dive.md} end-to-end
+  \item 30 min --- \texttt{05-improvements.tex} (the proposed extensions and their proofs)
+  \item 60 min --- running \texttt{cfg-schedule.py}, sketching an experiment, writing notes in \texttt{03-opinions.md}
+\end{itemize}
+
+\textbf{Elevator (one sentence).} ELF runs continuous-time flow matching in a \emph{frozen pretrained embedding space} and reuses \emph{the same network's final timestep} as the decoder via the \emph{weight-tied unembedding matrix}.
+
+\textbf{Why it matters.} The headline win is structural, not just empirical: discrete-token diffusion models (MDLM, SEDD) and continuous-noise diffusion language models had been treated as separate research programs. ELF shows that the second program, done in the right embedding space and decoded by the same network, dominates the first while shedding the separate-decoder overhead.
+
+\section*{2. Foundations Walk}
+
+Topologically ordered. The pacing tag (\textsc{skim}, \textsc{read}, \textsc{drill}) signals depth.
+
+\begin{longtable}{p{0.05\textwidth}p{0.32\textwidth}p{0.10\textwidth}p{0.43\textwidth}}
+\toprule
+\textbf{\#} & \textbf{Concept} & \textbf{Pacing} & \textbf{Why ELF needs this} \\
+\midrule
+\endhead
+06 & \href{https://github.com/pleyva2004/math-foundations/blob/main/concepts/06-linear-maps/README.md}{Linear Maps and Matrices} & skim & Token embedding $W_E$ and its transpose are the load-bearing linear maps; weight-tying says they are the same matrix. \\
+14 & \href{https://github.com/pleyva2004/math-foundations/blob/main/concepts/14-gradient-jacobian/README.md}{Gradient and Jacobian} & read & The velocity field $v_\theta(z_t, t)$ is regressed against a Jacobian-defined target; gradient flow on the FM loss is the optimisation story. \\
+24 & \href{https://github.com/pleyva2004/math-foundations/blob/main/concepts/24-pdf/README.md}{Probability Density Functions} & read & $z_0 \sim \mathcal{N}(0,I)$ and $z_1 \sim p_{\text{data}}$ are densities on $\mathbb{R}^d$; ELF is a transport between them. \\
+25 & \href{https://github.com/pleyva2004/math-foundations/blob/main/concepts/25-expectation/README.md}{Expectation} & skim & The flow-matching loss is an expectation over $(t, z_0, z_1)$. \\
+28 & \href{https://github.com/pleyva2004/math-foundations/blob/main/concepts/28-change-of-variables-probability/README.md}{Change of Variables (Probability)} & drill & The continuity equation $\partial_t p_t + \nabla \cdot (p_t v_t) = 0$ is the infinitesimal change-of-variables that makes flow matching well-defined. \\
+29 & \href{https://github.com/pleyva2004/math-foundations/blob/main/concepts/29-ode/README.md}{Ordinary Differential Equations} & read & Inference is the deterministic ODE $dz_t/dt = v_\theta(z_t, t)$, integrated from $t=0$ to $t=1$ with Euler or Heun. \\
+32 & \href{https://github.com/pleyva2004/math-foundations/blob/main/concepts/32-brownian-motion/README.md}{Brownian Motion / Wiener Process} & skim & Background; continuous-time noise diffusion (ELF's lineage) is built on Brownian motion. \\
+33 & \href{https://github.com/pleyva2004/math-foundations/blob/main/concepts/33-sde/README.md}{Stochastic Differential Equations} & skim & DDPM/SEDD are SDEs; flow matching is the deterministic ODE limit. Side-by-side clarifies what ELF gives up and gains. \\
+37 & \href{https://github.com/pleyva2004/math-foundations/blob/main/concepts/37-cross-entropy/README.md}{Cross-Entropy} & read & Final-step loss is cross-entropy between $W_E^\top z_1$ (logits) and the true token, tying the continuous flow to a discrete objective. \\
+38 & \href{https://github.com/pleyva2004/math-foundations/blob/main/concepts/38-kl-divergence/README.md}{KL Divergence} & skim & CFG re-derives as a KL-regularised posterior interpolation; useful framing for $\omega > 1$. \\
+40 & \href{https://github.com/pleyva2004/math-foundations/blob/main/concepts/40-information-geometry/README.md}{Information Geometry (Fisher Metric)} & drill & The proposed curved-path improvement lives on a Riemannian manifold whose metric is the Fisher information at each embedding. \\
+41 & \href{https://github.com/pleyva2004/math-foundations/blob/main/concepts/41-optimal-transport/README.md}{Optimal Transport (Wasserstein)} & drill & Linear interpolation is the Euclidean $W_2$ geodesic; the improvement asks whether the true OT geodesic on the embedding manifold differs. \\
+\bottomrule
+\end{longtable}
+
+\section*{3. Paper Concepts Walk}
+
+ELF-specific moving parts, lifted directly from \texttt{02-math-deep-dive.md}.
+
+\begin{longtable}{p{0.30\textwidth}p{0.50\textwidth}p{0.16\textwidth}}
+\toprule
+\textbf{Concept} & \textbf{What it does in the paper} & \textbf{Reference} \\
+\midrule
+\endhead
+Linear interpolation path & Defines the trajectory $z_t = (1-t) z_0 + t z_1$ along which the velocity target is computed; the constant $z_1 - z_0$ is the regression target. & Eq.~(1), Setup \\
+Velocity-field prediction & Network $v_\theta$ trained against $\mathcal{L}_\text{FM} = \mathbb{E}\lVert v_\theta(z_t, t) - (z_1 - z_0)\rVert^2$. & Eq.~(2), Central Object \\
+Weight-tied unembedding & At $t = 1$, logits $= W_E^\top z_1$ with the same $W_E$ used at encode-time. No separate decoder. & Final-Step Discretization \\
+Classifier-free guidance & $v_\text{cfg}(z_t \mid c) = \omega v_\theta(z_t \mid c) + (1-\omega) v_\theta(z_t \mid \emptyset)$, imported from image diffusion. & Eq.~(4) \\
+Self-conditioning & The conditioning $c$ is the model's own intermediate prediction; CFG without an external conditioner. & Self-Conditioning \\
+Training-time CFG & Network is trained to output $v_\text{cfg}$ directly in one forward pass, halving inference cost. & Eq.~(4) discussion \\
+Pretrained contextual embeddings & $W_E$ initialised from a frozen pretrained encoder; ablations show non-contextual or random embeddings collapse the lift. & Embedding Choice \\
+Latent-diffusion ancestry & ELF is Latent Diffusion specialised: encoder $=$ embedding matrix, decoder $=$ its transpose. & Connections \\
+\bottomrule
+\end{longtable}
+
+\section*{4. Improvements Walk}
+
+Each entry in \texttt{05-improvements.tex} is graded \textbf{PROOF} (derivation in a \texttt{.tex}) or \textbf{MEASUREMENT} (numbers from a Python script). Deferred items lack compute and are flagged.
+
+\begin{longtable}{p{0.06\textwidth}p{0.13\textwidth}p{0.34\textwidth}p{0.27\textwidth}p{0.13\textwidth}}
+\toprule
+\textbf{\#} & \textbf{Type} & \textbf{Title} & \textbf{Artefact} & \textbf{Status} \\
+\midrule
+\endhead
+Math 1 & PROOF & When is the linear path optimal? & \texttt{proofs/curved-path-optimality.tex} & live \\
+Math 2 & MEASUREMENT & Decomposing embedding-quality vs flow-formulation & counterfactual training run & deferred \\
+Code 1 & MEASUREMENT & Scheduled CFG: $\omega(t)$ rather than constant $\omega$ & \texttt{improvements/cfg-schedule.py} (extended with \texttt{measure()}) & live \\
+Code 2 & MEASUREMENT & Multimodal embedding sharing prototype & \texttt{improvements/multimodal-embed-share.py} & NEW sketch \\
+Exp 1 & MEASUREMENT & AR-baseline-controlled comparison at matched compute & 105M decoder-only AR run & deferred \\
+Exp 2 & MEASUREMENT & Multimodal embedding sharing experiment & \texttt{improvements/multimodal-embed-share.py} & live (sketch only) \\
+Theory 1 & PROOF & ELF as Latent Diffusion with weight-tied decoder & \texttt{proofs/elf-as-LDM.tex} & live \\
+Theory 2 & PROOF & ELF as discrete information bottleneck & \texttt{proofs/elf-info-bottleneck.tex} & deferred \\
+\bottomrule
+\end{longtable}
+
+\textbf{Pacing recommendation.} Read Math~1 and Theory~1 in full; they are tractable and clean. Run \texttt{cfg-schedule.py} interactively --- the toy result is the only piece of original-data evidence in this study and is the most interview-portable artefact. Glance at Theory~2 and the deferred experiments; they are framed as ``what would we measure if we had the GPUs.''
+
+\section*{5. What To Do Next}
+
+\begin{enumerate}
+  \item \textbf{Most promising proposal --- scheduled CFG.} The U-shaped $\omega(t) = \omega_{\max}\,(2t(1-t))^{-\beta}$ schedule (Code Improvement~1) is concrete, prototyped on a 2D toy, and requires \emph{no retraining} to test on a real ELF checkpoint --- only inference-time modification. Reach out to the ELF authors with the schedule and the toy result.
+  \item \textbf{Single most valuable experiment --- AR baseline at matched compute.} Train a 105M-parameter decoder-only Transformer on the same OpenWebText corpus for the same number of tokens as ELF's headline checkpoint. The single missing row of Table~1.
+  \item \textbf{Follow-on paper direction --- ``How much of ELF is the manifold, how much is the flow?''} Combine Math Improvement~2 (counterfactual: discrete diffusion on the same pretrained embedding space) with the scheduled-CFG result. The paper writes itself: \emph{ELF's lift decomposes into $X\%$ from the embedding manifold and $Y\%$ from the flow; here is the right CFG schedule for both regimes.}
+\end{enumerate}
+
+\end{document}

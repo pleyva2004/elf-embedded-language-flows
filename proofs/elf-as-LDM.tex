@@ -1,0 +1,288 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath, amssymb, amsthm, mathtools}
+\usepackage{hyperref}
+\newtheorem{theorem}{Theorem}
+\newtheorem{lemma}{Lemma}
+\newtheorem{proposition}{Proposition}
+
+\title{Embedded Language Flows as a Constrained Latent Diffusion Model}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section*{Setup}
+
+\iffalse
+This section fixes notation for both Latent Diffusion Models (LDM) and
+Embedded Language Flows (ELF), so that the proposition can be stated as a
+strict specialisation.
+\fi
+
+\paragraph{Latent Diffusion Models (LDM).}
+A Latent Diffusion Model in the sense of Rombach et al.\ (2022) is a triple
+\[
+  \mathcal{M}_{\mathrm{LDM}} \;=\; \bigl(E_{\mathrm{LDM}},\; \mathcal{F},\; D_{\mathrm{LDM}}\bigr),
+\]
+together with a training objective $\mathcal{L}_{\mathrm{LDM}}$, where:
+
+\begin{enumerate}
+  \item $E_{\mathrm{LDM}}\colon \mathcal{X} \to \mathcal{Z}$ is a (possibly
+        learned) encoder mapping a data sample $x\in\mathcal{X}$ to a latent
+        $z\in\mathcal{Z}\subseteq\mathbb{R}^{d}$.
+  \item $\mathcal{F}$ is a stochastic process on $\mathcal{Z}$ that
+        progressively transports a target latent $z_{1}=E_{\mathrm{LDM}}(x)$
+        to a tractable prior latent $z_{0}\sim p_{0}$. Concretely, $\mathcal{F}$
+        is specified by a family of marginals $\{p_{t}(z_{t}\mid z_{1})\}_{t\in[0,1]}$
+        and a parametric vector field or score network
+        $v_{\theta}(z_{t},t)$ trained so that the induced ODE/SDE pushes
+        $p_{0}$ onto the data latent distribution $E_{\mathrm{LDM}\,\sharp}\,p_{\mathrm{data}}$.
+  \item $D_{\mathrm{LDM}}\colon \mathcal{Z} \to \mathcal{X}$ is a decoder that
+        maps a sampled latent $\hat z$ back to the data space. In Rombach et
+        al.\ this is a separate decoder network trained jointly with
+        $E_{\mathrm{LDM}}$ via a (VQ-)VAE-style reconstruction objective.
+  \item The training objective decomposes as
+        \[
+          \mathcal{L}_{\mathrm{LDM}}
+          \;=\;
+          \mathcal{L}_{\mathrm{latent}}(\theta;\mathcal{F})
+          \;+\;
+          \lambda \,\mathcal{L}_{\mathrm{recon}}(E_{\mathrm{LDM}}, D_{\mathrm{LDM}}),
+        \]
+        where $\mathcal{L}_{\mathrm{latent}}$ supervises the diffusion process
+        in $\mathcal{Z}$ (denoising score matching, $\varepsilon$-prediction,
+        flow matching, etc.) and $\mathcal{L}_{\mathrm{recon}}$ supervises the
+        encoder/decoder pair against samples in $\mathcal{X}$.
+\end{enumerate}
+
+We emphasise that the LDM framework is agnostic to the specific noising
+process: the original work uses DDPM-style Gaussian diffusion, but
+continuous-time Flow Matching (Lipman et al.\ 2023) is a strictly valid
+choice of $\mathcal{F}$ since it specifies the same object--a parametric
+transport on $\mathcal{Z}$.
+
+\paragraph{Embedded Language Flows (ELF).}
+ELF (Hu et al.\ 2026) is a generative model over discrete token sequences.
+Let $\mathcal{V}$ be a finite vocabulary of size $|\mathcal{V}|$, and let
+$W_{E}\in\mathbb{R}^{d\times|\mathcal{V}|}$ be the input token embedding
+matrix of a Transformer language model. For a token $x\in\mathcal{V}$ with
+one-hot encoding $\mathbf{1}_{x}\in\mathbb{R}^{|\mathcal{V}|}$, write
+$W_{E}\,x \coloneqq W_{E}\,\mathbf{1}_{x}\in\mathbb{R}^{d}$. ELF defines:
+
+\begin{enumerate}
+  \item An \emph{encoder} $E_{\mathrm{ELF}}\colon \mathcal{V} \to \mathbb{R}^{d}$
+        given by the linear map $E_{\mathrm{ELF}}(x) = W_{E}\,x$, with $W_{E}$
+        \emph{frozen} at the value taken from the pretrained language model.
+  \item A \emph{flow-matching} diffusion in continuous embedding space
+        $\mathcal{Z}=\mathbb{R}^{d}$, with linear interpolant
+        $z_{t} = (1-t)\,z_{0} + t\,z_{1}$, $z_{0}\sim\mathcal{N}(0,I)$,
+        $z_{1}=E_{\mathrm{ELF}}(x)$. The conditional vector field
+        $u_{t}(z_{t}\mid z_{1}) = z_{1}-z_{0}$ is regressed by a parametric
+        $v_{\theta}(z_{t},t)$ via the flow-matching loss
+        \[
+          \mathcal{L}_{\mathrm{FM}}(\theta)
+          \;=\;
+          \mathbb{E}_{t,z_{0},z_{1}}
+          \bigl\|\, v_{\theta}(z_{t},t) - (z_{1}-z_{0}) \,\bigr\|_{2}^{2}.
+        \]
+  \item A \emph{decoder} $D_{\mathrm{ELF}}\colon \mathbb{R}^{d} \to \Delta^{|\mathcal{V}|-1}$
+        given by the weight-tied softmax classifier
+        \[
+          D_{\mathrm{ELF}}(z) \;=\; \mathrm{softmax}\bigl(W_{E}^{\top} z\bigr).
+        \]
+        No new parameters are introduced for the decoder.
+  \item A \emph{discretisation loss} at the final timestep $t=1$ given by
+        cross-entropy against the ground-truth token,
+        \[
+          \mathcal{L}_{\mathrm{CE}}
+          \;=\;
+          \mathbb{E}_{x}\Bigl[ -\log\bigl[D_{\mathrm{ELF}}(z_{1})\bigr]_{x} \Bigr].
+        \]
+\end{enumerate}
+The total ELF objective is
+$\mathcal{L}_{\mathrm{ELF}} = \mathcal{L}_{\mathrm{FM}} + \lambda\,\mathcal{L}_{\mathrm{CE}}$.
+
+\section*{Proposition (ELF is a constrained LDM)}
+
+\begin{proposition}\label{prop:elf-ldm}
+ELF is exactly the special case of LDM obtained by imposing the following
+four constraints on $\mathcal{M}_{\mathrm{LDM}} = (E_{\mathrm{LDM}}, \mathcal{F}, D_{\mathrm{LDM}})$
+and on $\mathcal{L}_{\mathrm{LDM}}$:
+\begin{enumerate}
+  \item[(i)]   $E_{\mathrm{LDM}}(x) = W_{E}\,x$ for a fixed (frozen) matrix
+               $W_{E}\in\mathbb{R}^{d\times|\mathcal{V}|}$.
+  \item[(ii)]  $D_{\mathrm{LDM}}(z) = \mathrm{softmax}(W_{E}^{\top} z)$, with
+               the \emph{same} $W_{E}$ as in (i) (weight tying).
+  \item[(iii)] $\mathcal{F}$ is continuous-time Flow Matching with the linear
+               Gaussian interpolant
+               $z_{t}=(1-t)z_{0}+t z_{1}$, $z_{0}\sim\mathcal{N}(0,I)$.
+  \item[(iv)]  The reconstruction term $\mathcal{L}_{\mathrm{recon}}$ is the
+               cross-entropy of $D_{\mathrm{LDM}}(z_{1})$ against the input
+               token $x$.
+\end{enumerate}
+Conversely, every choice satisfying \textup{(i)--(iv)} reproduces ELF
+exactly.
+\end{proposition}
+
+\section*{Proof}
+
+\begin{proof}
+We verify each component of the LDM triple separately, then the loss, and
+finally combine.
+
+\smallskip
+\noindent\emph{Step 1 (Encoder).}
+The LDM specification requires only that $E_{\mathrm{LDM}}$ be a measurable
+map $\mathcal{X}\to\mathcal{Z}$. Take $\mathcal{X}=\mathcal{V}$ (with the
+discrete sigma-algebra) and $\mathcal{Z}=\mathbb{R}^{d}$. The map
+$x\mapsto W_{E}\,\mathbf{1}_{x}$ is linear in the one-hot encoding and
+hence measurable, so it is a valid encoder. Constraint~(i) is therefore an
+admissible specialisation: it pins $E_{\mathrm{LDM}}$ to a degenerate but
+allowed family. Freezing $W_{E}$ amounts to removing $E_{\mathrm{LDM}}$ from
+the set of trainable parameters, which is a standard fine-tuning regime
+already covered by the LDM literature (e.g.\ frozen perceptual encoders in
+CLIP-conditioned LDMs).
+
+\smallskip
+\noindent\emph{Step 2 (Latent diffusion process).}
+LDM requires a stochastic process $\mathcal{F}$ on $\mathcal{Z}$ together
+with a parametric vector field or score network $v_{\theta}$ trained so
+that pushforward of $p_{0}$ under the induced flow matches
+$E_{\mathrm{LDM}\,\sharp}\,p_{\mathrm{data}}$. Flow Matching with linear
+interpolant satisfies this requirement: its conditional vector field
+$u_{t}(z_{t}\mid z_{1}) = z_{1}-z_{0}$ has a well-defined marginal
+$u_{t}(z_{t}) = \mathbb{E}[z_{1}-z_{0}\mid z_{t}]$, and the flow-matching
+loss $\mathcal{L}_{\mathrm{FM}}$ is a Bregman regression that recovers
+$u_{t}$ at its global minimiser (Lipman et al.\ 2023, Theorem~1).
+Integrating $\dot z_{t} = v_{\theta}(z_{t},t)$ from $t=0$ to $t=1$ then
+transports $p_{0}=\mathcal{N}(0,I)$ to the latent data distribution
+$E_{\mathrm{LDM}\,\sharp}\,p_{\mathrm{data}}$. Hence constraint~(iii)
+selects one valid instance of $\mathcal{F}$ from the LDM design space.
+
+\smallskip
+\noindent\emph{Step 3 (Decoder).}
+LDM requires $D_{\mathrm{LDM}}\colon\mathcal{Z}\to\mathcal{X}$. For
+$\mathcal{X}=\mathcal{V}$ the natural codomain of a probabilistic decoder is
+the simplex $\Delta^{|\mathcal{V}|-1}$ over $\mathcal{V}$, from which we
+sample. The map
+\[
+  z \;\longmapsto\; \mathrm{softmax}\bigl(W_{E}^{\top} z\bigr)
+  \;\in\; \Delta^{|\mathcal{V}|-1}
+\]
+is well defined, smooth, and surjective onto the relative interior of the
+simplex; followed by sampling, it gives a valid stochastic decoder
+$\mathcal{Z}\to\mathcal{V}$. Constraint~(ii) further ties the decoder
+weights to those of the encoder. This tying is a hard parameter constraint
+of the form $W_{D} = W_{E}^{\top}$ on the otherwise free decoder weights
+$W_{D}\in\mathbb{R}^{|\mathcal{V}|\times d}$. Imposing such a constraint
+strictly reduces the LDM hypothesis class: every weight-tied decoder is an
+LDM decoder, but not vice versa. Crucially, the tying eliminates the
+$O(d\cdot|\mathcal{V}|)$ decoder parameters, since they coincide with
+those already counted in the encoder.
+
+\smallskip
+\noindent\emph{Step 4 (Loss).}
+The LDM objective decomposes as
+$\mathcal{L}_{\mathrm{LDM}} = \mathcal{L}_{\mathrm{latent}} + \lambda\,\mathcal{L}_{\mathrm{recon}}$.
+By Step~2, choosing $\mathcal{L}_{\mathrm{latent}} = \mathcal{L}_{\mathrm{FM}}$
+is consistent with~(iii). It remains to specify $\mathcal{L}_{\mathrm{recon}}$.
+For a categorical output space, the canonical reconstruction loss is the
+negative log-likelihood, i.e.\ the cross-entropy between $D_{\mathrm{LDM}}(z_{1})$
+and the input one-hot $\mathbf{1}_{x}$. This is precisely
+$\mathcal{L}_{\mathrm{CE}}$, so constraint~(iv) selects the canonical
+categorical reconstruction loss within the LDM template.
+
+\smallskip
+\noindent\emph{Step 5 (Combination).}
+Substituting (i)--(iv) into the LDM definition yields
+\[
+  \mathcal{M}_{\mathrm{LDM}}^{\star}
+  \;=\;
+  \Bigl( x\mapsto W_{E}x,\; \text{Flow Matching with linear interpolant},\;
+         z\mapsto\mathrm{softmax}(W_{E}^{\top}z) \Bigr),
+\]
+with objective
+$\mathcal{L}_{\mathrm{LDM}}^{\star} = \mathcal{L}_{\mathrm{FM}} + \lambda\,\mathcal{L}_{\mathrm{CE}}$.
+Component-by-component, this matches Setup's definition of ELF:
+encoder ($E_{\mathrm{ELF}} = W_{E}$), latent process (flow matching with
+linear interpolant), decoder ($D_{\mathrm{ELF}} = \mathrm{softmax}(W_{E}^{\top}\,\cdot\,)$),
+and loss ($\mathcal{L}_{\mathrm{ELF}} = \mathcal{L}_{\mathrm{FM}} + \lambda\,\mathcal{L}_{\mathrm{CE}}$).
+Hence $\mathcal{M}_{\mathrm{LDM}}^{\star}$ \emph{is} ELF, and conversely
+every ELF model is obtained in this way. The equivalence is constructive:
+each constraint is fully specified, and the construction is invertible.
+\end{proof}
+
+\section*{Consequences}
+
+\begin{enumerate}
+  \item \textbf{Toolkit transfer.} Because ELF is a constrained LDM, every
+        technique developed for LDMs that does not rely on a separately
+        learned decoder transfers immediately. Concretely:
+        \begin{itemize}
+          \item \emph{Classifier-free guidance} (Ho \& Salimans 2022) is
+                already used in ELF; the proposition shows this was not
+                coincidental but inherited.
+          \item \emph{Perceptual losses} of the form
+                $\sum_{\ell}\|\phi_{\ell}(z_{t}) - \phi_{\ell}(z_{t}^{\star})\|^{2}$
+                for intermediate trajectory states, where $\phi_{\ell}$ is a
+                pretrained feature extractor, are admissible additions to
+                $\mathcal{L}_{\mathrm{ELF}}$ without altering the proposition.
+          \item \emph{Joint encoder--decoder training with a KL
+                regulariser} (the VAE branch of LDM) becomes available
+                once constraint~(i) is relaxed; see consequence~2.
+        \end{itemize}
+  \item \textbf{Relaxing the frozen encoder.} Constraint~(i) is the
+        strongest restriction. Replacing it with a trainable
+        $W_{E}\in\mathbb{R}^{d\times|\mathcal{V}|}$ together with a KL
+        penalty
+        $\mathrm{KL}\bigl(q_{\phi}(z\mid x)\,\|\,\mathcal{N}(0,I)\bigr)$
+        recovers a categorical-input VAE-LDM, in which the embedding
+        matrix is co-adapted to the diffusion latent geometry rather than
+        inherited verbatim from a Transformer.
+  \item \textbf{Relaxing the weight-tied decoder.} Constraint~(ii) imposes
+        $W_{D} = W_{E}^{\top}$. The natural relaxation is a low-rank
+        residual $W_{D} = W_{E}^{\top} + UV^{\top}$ with
+        $U\in\mathbb{R}^{|\mathcal{V}|\times r}$,
+        $V\in\mathbb{R}^{d\times r}$ and $r \ll \min(d,|\mathcal{V}|)$.
+        This adds $O(r(d+|\mathcal{V}|))$ parameters while preserving the
+        weight-tying inductive bias; this is the natural ``ELF v2''
+        candidate suggested by the embedding into the LDM family.
+\end{enumerate}
+
+\section*{Discussion}
+
+\paragraph{What this proof gives.}
+A constructive, invertible identification of ELF with a four-constraint
+specialisation of LDM. The identification is not metaphorical: every
+component of the LDM definition is matched component-wise, and the
+constraint set (i)--(iv) is exhaustive. As a structural result this
+licenses one-line citations of LDM theorems (e.g.\ guidance, latent
+regularisation) inside ELF analyses, and it pins down precisely which
+LDM hyperparameters ELF has fixed.
+
+\paragraph{What this proof does not give.}
+The equivalence is at the level of model class and objective, not at the
+level of empirical performance. It does \emph{not} guarantee that any
+particular LDM technique will improve ELF in practice; that is an
+empirical question about how well the language-modelling inductive bias
+plays with the technique in question. Likewise, the proof says nothing
+about sample quality, training stability, or scaling behaviour--those
+require experiments.
+
+\paragraph{How to test.}
+Instrument an existing ELF training run with one LDM technique drawn from
+consequence~1 and measure a downstream metric. Concretely, the cleanest
+test is a perceptual loss on intermediate trajectory states: define
+$\phi_{\ell}$ as the residual-stream activations of a frozen pretrained
+language model at layer $\ell$, augment $\mathcal{L}_{\mathrm{ELF}}$ with
+$\beta\sum_{\ell}\mathbb{E}_{t}\|\phi_{\ell}(z_{t})-\phi_{\ell}(z_{t}^{\star})\|^{2}$
+where $z_{t}^{\star}$ is the teacher trajectory, and compare downstream
+perplexity at matched compute. A positive result would corroborate the
+operational utility of the embedding into LDM; a null result would
+demonstrate that constraint~(i) (the frozen, language-model-derived
+encoder) makes the latent space sufficiently structured that perceptual
+regularisation is redundant--itself a useful negative finding.
+
+\end{document}

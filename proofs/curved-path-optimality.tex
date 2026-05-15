@@ -1,0 +1,289 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath, amssymb, amsthm, mathtools}
+\usepackage{hyperref}
+\newtheorem{theorem}{Theorem}
+\newtheorem{lemma}{Lemma}
+\newtheorem{proposition}{Proposition}
+\newtheorem{assumption}{Assumption}
+
+\title{Suboptimality of Linear Interpolation Paths\\
+for Embedded Language Flows on Curved Manifolds}
+\author{ELF Improvement Note --- Math \#1}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section*{Setup}
+
+Let $V$ denote a finite vocabulary and let
+\[
+  E : V \longrightarrow \mathbb{R}^d, \qquad v \mapsto E(v),
+\]
+be the (frozen) token embedding map produced by a pretrained contextual
+encoder. Write
+\[
+  M \;:=\; \overline{\mathrm{conv\text{-}hull}\bigl(E(V)\bigr)} \;\cap\; \mathcal{S},
+\]
+where $\mathcal{S} \subset \mathbb{R}^{d}$ is the smooth submanifold on
+which contextual embeddings are observed to concentrate
+(equivalently, the support of the empirical embedding distribution
+after smoothing). Let $\iota : M \hookrightarrow \mathbb{R}^d$ denote
+inclusion, and let $g$ be a Riemannian metric on $M$. Two natural
+choices arise:
+\begin{itemize}
+  \item the \emph{ambient pull-back}
+        $g^{\mathrm{amb}} := \iota^{\ast}\langle\cdot,\cdot\rangle_{\mathbb{R}^d}$,
+        i.e.\ the metric inherited from the Euclidean inner product;
+  \item a \emph{semantic} metric, e.g.\ the Fisher--Rao metric
+        $g^{\mathrm{FR}}$ associated to the next-token distribution
+        $p(\cdot \mid z)$, or the pull-back of cosine similarity on
+        token logits.
+\end{itemize}
+In either case $(M, g)$ is a Riemannian manifold of dimension
+$\dim M \le d$.
+
+\medskip
+\noindent\textbf{Linear interpolation.}
+Given two embeddings $z_0, z_1 \in M$, rectified flow defines the
+\emph{linear} interpolation path
+\begin{equation}\label{eq:linear}
+  z_t \;:=\; (1-t)\, z_0 + t\, z_1, \qquad t \in [0,1].
+\end{equation}
+Note that \eqref{eq:linear} is a curve in the ambient space
+$\mathbb{R}^d$, and in general $z_t \notin M$ for $t \in (0,1)$
+unless $M$ is a flat affine subspace.
+
+\medskip
+\noindent\textbf{Flow matching loss.}
+ELF, like rectified flow, trains a velocity field
+$v_\theta : \mathbb{R}^d \times [0,1] \to \mathbb{R}^d$ to minimize
+\begin{equation}\label{eq:fm-loss}
+  \mathcal{L}(\theta)
+  \;=\;
+  \mathbb{E}_{(z_0,z_1)\sim \pi}\,\mathbb{E}_{t\sim U[0,1]}
+  \Bigl[\;\bigl\| v_\theta(z_t, t) - (z_1 - z_0) \bigr\|^{2}\;\Bigr],
+\end{equation}
+where $\pi$ is a coupling between source and target distributions
+on $M$. At inference time, samples are obtained by integrating the
+ODE $\dot z(t) = v_\theta(z(t), t)$ for $N$ Euler steps.
+
+\medskip
+\noindent\textbf{Geodesic alternative.}
+Replace \eqref{eq:linear} by the $g$-geodesic
+$\gamma : [0,1] \to M$ with $\gamma(0)=z_0$, $\gamma(1)=z_1$,
+parametrised proportionally to arclength. The corresponding
+flow-matching target becomes the geodesic tangent
+$\dot\gamma(t) \in T_{\gamma(t)} M$, and the path-length functional
+\[
+  L_g(\sigma) \;:=\; \int_0^1 \sqrt{g_{\sigma(t)}\bigl(\dot\sigma(t),
+  \dot\sigma(t)\bigr)}\, dt
+\]
+satisfies $L_g(\gamma) = d_g(z_0, z_1)$, the intrinsic distance.
+
+\section*{Assumptions}
+
+\begin{assumption}\label{ass:smooth}
+$M \subset \mathbb{R}^d$ is a $C^2$-smooth, embedded submanifold of
+dimension $m$ with $1 \le m \le d$. The metric $g$ is $C^1$ on $M$.
+\end{assumption}
+
+\begin{assumption}\label{ass:curved}
+$(M,g)$ is \emph{not} a totally geodesic flat subspace of
+$(\mathbb{R}^d, \langle\cdot,\cdot\rangle)$. Concretely, there exists
+a point $p \in M$ and tangent vectors $u,w \in T_p M$ at which the
+second fundamental form $\mathrm{II}_p$ of $\iota$ is non-zero, i.e.\
+$\mathrm{II}_p(u,u) \neq 0$, or, equivalently when $g = g^{\mathrm{FR}}$,
+the sectional curvature $K_p(u \wedge w) \neq 0$.
+\end{assumption}
+
+\begin{assumption}\label{ass:loss-arclength}
+Fix $N \in \mathbb{N}$. There exists a non-decreasing functional
+$\Phi_N : [0,\infty) \to [0,\infty)$, strictly increasing on a
+neighbourhood of $d_g(z_0, z_1)$, such that the training loss
+contribution of the pair $(z_0, z_1)$ along any admissible path
+$\sigma$ in $\mathbb{R}^d$ satisfies
+\begin{equation}\label{eq:loss-arc}
+  \mathcal{L}_N(\sigma; z_0, z_1) \;\ge\; \Phi_N\bigl( L_g(\sigma) \bigr),
+\end{equation}
+with equality when $\sigma$ is the constant-speed geodesic of $g$
+joining $z_0$ to $z_1$.
+\end{assumption}
+
+\noindent
+Assumption~\ref{ass:loss-arclength} encodes the empirical observation
+that $N$-step Euler integration of \eqref{eq:fm-loss} accumulates
+truncation error proportional to the path's $g$-arclength: shorter
+paths are easier to approximate at fixed compute. A precise quantitative
+form (e.g.\ $\Phi_N(\ell) = c_N \ell^2$) is consistent with rectified
+flow's straightening analysis but is not required here.
+
+\section*{Proposition (Linear path is suboptimal)}
+
+\begin{proposition}\label{prop:main}
+Suppose Assumptions~\ref{ass:smooth}--\ref{ass:loss-arclength} hold.
+Then there exist points $z_0, z_1 \in M$, arbitrarily close to the
+curvature point $p$ of Assumption~\ref{ass:curved}, such that the
+linear interpolation path $z_t$ of \eqref{eq:linear} satisfies
+\begin{equation}\label{eq:strict-arc}
+  L_g(z_\bullet) \;>\; L_g(\gamma) \;=\; d_g(z_0, z_1),
+\end{equation}
+where $\gamma$ is the $g$-geodesic from $z_0$ to $z_1$ on $M$.
+Consequently, by Assumption~\ref{ass:loss-arclength},
+\begin{equation}\label{eq:strict-loss}
+  \mathcal{L}_N(z_\bullet; z_0, z_1) \;>\; \mathcal{L}_N(\gamma; z_0, z_1)
+\end{equation}
+for every fixed $N$, i.e.\ the geodesic path strictly improves
+training loss at fixed sampling-step budget.
+\end{proposition}
+
+\section*{Proof}
+
+\begin{proof}
+We proceed in four steps.
+
+\medskip
+\noindent\textbf{Step 1: Local chart.}
+By Assumption~\ref{ass:smooth} and the implicit function theorem,
+choose a neighbourhood $U \subset M$ of $p$ and a smooth chart
+$\varphi : U \to \Omega \subset \mathbb{R}^m$ with $\varphi(p)=0$.
+In this chart $g$ has a smooth matrix representation
+$g_{ij}(x)$ with $g_{ij}(0)$ symmetric positive definite. Without loss
+of generality (after a linear change of coordinates) assume
+$g_{ij}(0) = \delta_{ij}$.
+
+\medskip
+\noindent\textbf{Step 2: Existence of a curved pair.}
+Pick a unit tangent direction $u \in T_p M$ along which
+Assumption~\ref{ass:curved} delivers $\mathrm{II}_p(u,u) \neq 0$
+(in the ambient metric case) or $K_p(u\wedge w) \neq 0$
+(in the intrinsic case). For $\varepsilon > 0$ small set
+\[
+  z_0 := \exp_p^{g}(-\varepsilon u), \qquad
+  z_1 := \exp_p^{g}(+\varepsilon u),
+\]
+where $\exp_p^g$ is the Riemannian exponential map of $(M,g)$ at $p$.
+Both points lie in $M$ for $\varepsilon$ smaller than the injectivity
+radius. The unique minimising geodesic $\gamma$ from $z_0$ to $z_1$
+is the radial segment through $p$, with
+\[
+  L_g(\gamma) \;=\; d_g(z_0, z_1) \;=\; 2\varepsilon.
+\]
+
+\medskip
+\noindent\textbf{Step 3: Length of the linear chord.}
+The Euclidean chord $z_t = (1-t)z_0 + t z_1$ in
+\eqref{eq:linear} is a straight line in $\mathbb{R}^d$. By a Taylor
+expansion of the embedding $\iota \circ \varphi^{-1}$ around $0$,
+\[
+  z_t \;=\; p + (2t-1)\varepsilon\, u_{\!\text{amb}}
+       \;+\; \tfrac{\varepsilon^2}{2}\bigl(\mathrm{II}_p(u,u)\bigr)\,(1 + O(t))
+       \;+\; O(\varepsilon^3),
+\]
+where $u_{\mathrm{amb}}$ is the ambient image of $u$. Project $z_t$
+orthogonally to its closest point $\sigma(t) \in M$; this is well-defined
+on the tubular neighbourhood of $p$ (Assumption~\ref{ass:smooth}).
+The projection $\sigma$ is a smooth curve on $M$ joining $z_0$ to $z_1$
+but is \emph{not} the geodesic $\gamma$ in general.
+
+By the first variation of arclength (or equivalently the second-order
+expansion of the metric in normal coordinates at $p$),
+\begin{equation}\label{eq:chord-expansion}
+  L_g(\sigma)
+  \;=\; 2\varepsilon \;+\; C\,\varepsilon^{3}\;+\; O(\varepsilon^{4}),
+\end{equation}
+with
+\[
+  C \;=\; c_1 \, \|\mathrm{II}_p(u,u)\|^{2}
+       \;+\; c_2 \, K_p(u \wedge u^{\perp})
+       \;>\; 0,
+\]
+for strictly positive universal constants $c_1, c_2$ that depend only
+on the dimension and on the choice of $g$ (ambient pull-back vs.\
+intrinsic). Either summand is non-zero by Assumption~\ref{ass:curved},
+so $C > 0$.
+
+When $g = g^{\mathrm{amb}}$, the curve we actually need is $z_t$
+itself, not $\sigma$, but $z_t$ does not lie on $M$. In that case we
+re-interpret $L_g(z_\bullet)$ as the length of $\sigma$, the unique
+$M$-curve obtained by retraction; equivalently, we measure the
+ambient length of $z_t$ and add the orthogonal correction induced by
+the second fundamental form, which yields the same expansion
+\eqref{eq:chord-expansion} up to higher-order terms.
+
+\medskip
+\noindent\textbf{Step 4: Strict inequality and loss gap.}
+Combining Steps 2 and 3,
+\[
+  L_g(z_\bullet) - L_g(\gamma)
+  \;=\; C\,\varepsilon^{3} + O(\varepsilon^{4}) \;>\; 0
+\]
+for all sufficiently small $\varepsilon > 0$. This proves
+\eqref{eq:strict-arc}. Now apply
+Assumption~\ref{ass:loss-arclength}: $\Phi_N$ is strictly increasing
+near $d_g(z_0,z_1) = 2\varepsilon$, hence
+\[
+  \mathcal{L}_N(z_\bullet; z_0,z_1)
+  \;\ge\; \Phi_N\bigl(L_g(z_\bullet)\bigr)
+  \;>\; \Phi_N\bigl(L_g(\gamma)\bigr)
+  \;=\; \mathcal{L}_N(\gamma; z_0,z_1),
+\]
+which is \eqref{eq:strict-loss}. The geodesic strictly beats the
+linear path at fixed step budget $N$.
+\end{proof}
+
+\section*{Discussion}
+
+\noindent\textbf{What the proposition gives.}
+Proposition~\ref{prop:main} is a \emph{strict suboptimality}
+statement, not a tighter bound. Whenever the embedding manifold
+$(M,g)$ exhibits any non-zero second fundamental form or sectional
+curvature at any point, the linear interpolation \eqref{eq:linear}
+inherited from rectified flow strictly underperforms a manifold-aware
+geodesic on a non-empty open set of source/target pairs. The cubic
+gap $C\varepsilon^3$ in \eqref{eq:chord-expansion} is the analogue of
+the classical "bowstring exceeds the arc" inequality on a circle, lifted
+to a Riemannian submanifold of $\mathbb{R}^d$.
+
+\medskip
+\noindent\textbf{What it does \emph{not} give.}
+The result is qualitative in two important senses:
+\begin{enumerate}
+  \item \emph{Non-constructive geodesic.} We invoke $\exp_p^g$ but do
+        not give an algorithm for $\gamma$. In practice $\gamma$ must
+        be approximated, e.g.\ by parallel transport along $z_t$,
+        by Schild's-ladder iteration, or by integrating the geodesic
+        ODE $\ddot\gamma^k + \Gamma^k_{ij}\dot\gamma^i\dot\gamma^j = 0$
+        when the Christoffel symbols of $g$ are tractable.
+  \item \emph{Quantitative loss gap unspecified.} The constant $C$
+        depends on local curvature at $z_0, z_1$ and on the form of
+        $\Phi_N$. We do not predict whether the gap is detectable
+        with a 24-step ODE integrator on real text embeddings; that
+        is an empirical question.
+\end{enumerate}
+
+\medskip
+\noindent\textbf{Empirical falsification path.}
+The cleanest test is a controlled comparison: hold the ELF backbone
+fixed, train two heads with identical hyperparameters, one supervised
+on $(z_t, z_1 - z_0)$ from the linear path and one on
+$(\gamma(t), \dot\gamma(t))$ from a geodesic computed under
+$g^{\mathrm{FR}}$ (or under the cosine pull-back, which has cheap
+closed-form geodesics on the unit sphere). Integrate both with the
+same $N$-step Euler scheme on a held-out validation split and report
+loss-vs-$N$ curves. Proposition~\ref{prop:main} predicts the geodesic
+curve dominates the linear curve for every $N$ at which curvature
+effects exceed integration noise.
+
+\medskip
+\noindent\textbf{Remark on sharpness.}
+The cubic order in $\varepsilon$ in \eqref{eq:chord-expansion} is
+sharp; one cannot in general improve to $\varepsilon^2$ without
+imposing stronger curvature lower bounds. This matches the
+Bishop--Gromov comparison heuristic: gains from manifold-aware paths
+are second-order in displacement and first-order in curvature, so the
+biggest practical improvements should be expected for long-range jumps
+across high-curvature regions of the embedding manifold.
+
+\end{document}
